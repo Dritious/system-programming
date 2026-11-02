@@ -1,0 +1,6 @@
+Директория: ..
+Библиотека: libc.so.6 , архитектура: AMD64 / Intel 64 (x86_64)
+Дата: Fri Oct 30 18:01:14 2026
+
+../elf_anal/main, 2, 1, AMD64 / Intel 64 (x86_64)
+../elf_anal/src/ls, 2, 1, AMD64 / Intel 64 (x86_64)

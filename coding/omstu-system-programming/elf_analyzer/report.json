@@ -1,0 +1,13 @@
+{
+  "created_date":"Wed Oct 28 20:42:19 2026\n",
+  "lib_name":"libc.so.6",
+  "lib_arch":"AMD64 \/ Intel 64 (x86_64)",
+  "..\/elf_anal\/main":{
+    "count":2,
+    "file_arch":"AMD64 \/ Intel 64 (x86_64)"
+  },
+  "..\/elf_anal\/src\/ls":{
+    "count":2,
+    "file_arch":"AMD64 \/ Intel 64 (x86_64)"
+  }
+}
