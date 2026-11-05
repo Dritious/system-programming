@@ -3,8 +3,16 @@
 #include <string.h>
 #include <getopt.h>
 
-int print_help(){
-    printf("Help");
+int print_help() {
+    printf("Использование: bldd [ОПЦИИ] <путь_к_библиотеке> <каталог_сканирования>\n");
+    printf("Обратный ldd: поиск ELF-файлов, зависящих от указанной разделяемой библиотеки.\n\n");
+    printf("Опции:\n");
+    printf("  -h, --help               Показать эту справку\n");
+    printf("  -e, --export-to FORMAT   Формат отчета (txt, json, html). По умолчанию txt.\n\n");
+    printf("Примеры:\n");
+    printf("  bldd /lib/x86_64-linux-gnu/libc.so.6 /usr/bin\n");
+    printf("  bldd -e html /usr/lib/libm.so /opt/software\n");
+    return 0;
 }
 
 int main(int argc, char *argv[]){

@@ -1,41 +1,6 @@
 #include <string.h>
+#include <unistd.h>
 #include "include/elf_parser.h"
-
-Elf64_Dyn_Ctx* get_dyn_ctx(Elf64_Ehdr ehdr, Elf64_Shdr* shdr, FILE* file){
-    Elf64_Shdr *dyn_shdr = NULL;
-    Elf64_Shdr *dynstr_shdr = NULL;
-
-    for (int i = 0; i < ehdr.e_shnum; i++) {
-        if (shdr[i].sh_type == SHT_DYNAMIC){
-            dyn_shdr = &shdr[i];
-        }
-    }
-
-    if (dyn_shdr) {
-        dynstr_shdr = &shdr[dyn_shdr->sh_link];
-    }
-
-    if (!dyn_shdr || !dynstr_shdr) {
-        return NULL;
-    }
-
-    Elf64_Dyn_Ctx* dyn_ctx = malloc(sizeof(Elf64_Dyn_Ctx));
-
-    char *dynstr = malloc(dynstr_shdr->sh_size);
-    fseek(file, dynstr_shdr->sh_offset, SEEK_SET);
-    fread(dynstr, dynstr_shdr->sh_size, 1, file);
-    dyn_ctx->str = dynstr;
-
-    int dyn_entries_count = dyn_shdr->sh_size / sizeof(Elf64_Dyn);
-    dyn_ctx->entries_count = dyn_entries_count;
-
-    Elf64_Dyn *dyn_entries = malloc(dyn_shdr->sh_size);
-    fseek(file, dyn_shdr->sh_offset, SEEK_SET);
-    fread(dyn_entries, sizeof(Elf64_Dyn), dyn_entries_count, file);
-    dyn_ctx->entries = dyn_entries;
-
-    return dyn_ctx;
-}
 
 Elf64_Phdr* get_phdr(Elf64_Ehdr ehdr, FILE* file){
    Elf64_Phdr* phdr = malloc(ehdr.e_phentsize * ehdr.e_phnum);
@@ -97,6 +62,13 @@ Elf64_hdrs* get_elf_headers(FILE* file){
     return hdrs;
 }
 
+void free_elf_headers(Elf64_hdrs* hdrs) {
+    if (!hdrs) return;
+    if (hdrs->phdr) free(hdrs->phdr);
+    if (hdrs->shdr) free(hdrs->shdr);
+    free(hdrs);
+}
+
 int is_exec(Elf64_Ehdr ehdr, Elf64_Phdr* phdr){
     if (ehdr.e_type==ET_EXEC){
         return 1;
@@ -146,64 +118,98 @@ char* get_arch(uint16_t e_machine){
     }
 }
 
-Execfile_Info* get_execfile_info(char* filename, char* libname){
-    FILE *file = fopen(filename, "rb");
-    if (!file){
-        perror("No such file");
+Elf64_Dyn_Ctx* get_dyn_ctx(Elf64_Ehdr ehdr, Elf64_Shdr* shdr, FILE* file){
+    Elf64_Shdr *dyn_shdr = NULL;
+    Elf64_Shdr *dynstr_shdr = NULL;
+
+    for (int i = 0; i < ehdr.e_shnum; i++) {
+        if (shdr[i].sh_type == SHT_DYNAMIC){
+            dyn_shdr = &shdr[i];
+        }
+    }
+
+    if (dyn_shdr) {
+        dynstr_shdr = &shdr[dyn_shdr->sh_link];
+    }
+
+    if (!dyn_shdr || !dynstr_shdr) {
         return NULL;
     }
+
+    Elf64_Dyn_Ctx* dyn_ctx = malloc(sizeof(Elf64_Dyn_Ctx));
+
+    char *dynstr = malloc(dynstr_shdr->sh_size);
+    fseek(file, dynstr_shdr->sh_offset, SEEK_SET);
+    fread(dynstr, dynstr_shdr->sh_size, 1, file);
+    dyn_ctx->str = dynstr;
+
+    int dyn_entries_count = dyn_shdr->sh_size / sizeof(Elf64_Dyn);
+    dyn_ctx->entries_count = dyn_entries_count;
+
+    Elf64_Dyn *dyn_entries = malloc(dyn_shdr->sh_size);
+    fseek(file, dyn_shdr->sh_offset, SEEK_SET);
+    fread(dyn_entries, sizeof(Elf64_Dyn), dyn_entries_count, file);
+    dyn_ctx->entries = dyn_entries;
+
+    return dyn_ctx;
+}
+
+Execfile_Info* get_execfile_info(char* filename, char* libname){
+    if (access(filename, R_OK) != 0) {
+        return NULL; 
+    }
+    FILE *file = fopen(filename, "rb");
+    if (!file) return NULL; 
 
     Elf64_hdrs* hdrs = get_elf_headers(file); 
-    if (hdrs == NULL){
+    if (hdrs == NULL || !is_exec(hdrs->ehdr, hdrs->phdr)){
+        free_elf_headers(hdrs);
         fclose(file);
         return NULL;
     }
-    if (!is_exec(hdrs->ehdr, hdrs->phdr)) {
-        fclose(file);
-        return NULL;
-    }
-    Elf64_Dyn_Ctx *dyn_ctx = get_dyn_ctx(hdrs->ehdr, hdrs->shdr, file);
-    if (dyn_ctx == NULL) {
-        free(hdrs->shdr);
-        free(hdrs->phdr);
-        free(hdrs);
-        fclose(file);
-        return NULL;
-    }
+
+    char* file_arch = get_arch(hdrs->ehdr.e_machine);
 
     Execfile_Info* info = malloc(sizeof(Execfile_Info));
-    info->filepath = malloc(strlen(filename)+1);
-    strcpy(info->filepath, filename);
+    info->filepath = strdup(filename); 
     info->count = 0;
     info->has_lib = 0;
-    info->arch = get_arch(hdrs->ehdr.e_machine);
-    for (int i = 0; i < dyn_ctx->entries_count; i++){
-        if (dyn_ctx->entries[i].d_tag == DT_NEEDED){
-            Elf64_Xword string_off = dyn_ctx->entries[i].d_un.d_val;
-            if (strcmp(&dyn_ctx->str[string_off], libname)==0){
-                info->has_lib = 1;
-            }
-            info->count++;
-        }
+    info->arch = file_arch;
+    info->is_statical = 0;
 
-        if (dyn_ctx->entries[i].d_tag == DT_NULL){
-            break;
+    Elf64_Dyn_Ctx *dyn_ctx = get_dyn_ctx(hdrs->ehdr, hdrs->shdr, file);
+    if (dyn_ctx == NULL) {
+        info->is_statical = 1; 
+    } else {
+        for (int i = 0; i < dyn_ctx->entries_count; i++){
+            if (dyn_ctx->entries[i].d_tag == DT_NEEDED){
+                Elf64_Xword string_off = dyn_ctx->entries[i].d_un.d_val;
+                if (match_libname(&dyn_ctx->str[string_off], libname)){
+                    info->has_lib = 1; 
+                }
+                info->count++;
+            }
+            if (dyn_ctx->entries[i].d_tag == DT_NULL) break;
         }
+        free(dyn_ctx->entries);
+        free(dyn_ctx->str);
+        free(dyn_ctx);
     }
 
-    free(dyn_ctx->entries);
-    free(dyn_ctx->str);
-    free(dyn_ctx);
-    free(hdrs->shdr);
-    free(hdrs->phdr);
-    free(hdrs);
+    free_elf_headers(hdrs);
     fclose(file);
+
+    if (!info->is_statical && info->has_lib == 0) {
+        free(info->filepath);
+        free(info);
+        return NULL;
+    }
 
     return info;
 }
 
 Lib_Info* get_lib_info(const char* libpath){
-    Lib_Info* info = malloc(sizeof(info));
+    Lib_Info* info = malloc(sizeof(Lib_Info));
     FILE *file = fopen(libpath, "rb");
     if (!file){
         perror("No such file");
